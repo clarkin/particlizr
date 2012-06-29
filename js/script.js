@@ -8,16 +8,57 @@ $(document).ready(function() {
     var deltaLast = 0;
     var deltaEver = 0;
     var particles = new Array();
-    var running = true;
+    var running = false;
     var debug = false;
+    var random = false;
+    var ticks = 0;
+    var reader = new FileReader();
 
     var FRAMESPEED = 20.0;
     var EMITTER_X = 470.0;
     var EMITTER_Y = 300.0;
     var EMITTER_ATTRACTION = 1100.0;
-    var EMITTER_FREQUENCY = 200;
-    var MAX_PARTICLES = 100;
+    var EMITTER_FREQUENCY = 50;
+    var MAX_PARTICLES = 10000;
     var ticker = EMITTER_FREQUENCY;
+
+    var start = function() {
+        timeStart = new Date();
+        particles = new Array();
+        running = true;
+    }
+
+    var startRandom = function() {
+        random = true;
+        start();
+    }
+    $("#start-random").on("click", startRandom);
+
+    var loadFromFile = function(evt) {
+        var file = evt.target.files[0];
+        console.log("looking at " + file.name + " of size " + file.size + " bytes.");
+
+        reader = new FileReader();
+        reader.onloadend = checkLoadEnd;
+        var jsonblob = file.webkitSlice(0,50000);
+        reader.readAsBinaryString(jsonblob);
+
+        random = false;
+        start();
+    }
+    $("#file-selector").on("change", loadFromFile);
+
+    var checkLoadEnd = function(evt) {
+        //console.log("checking load end", evt.target.readyState)
+        if (evt.target.readyState == FileReader.DONE)
+            loadedStartOfFile(evt.target.result);
+    }
+
+    var loadedStartOfFile = function(loadedString) {
+        console.log("loaded:",loadedString);
+        //loop through finding events
+
+    }
 
     var mainloop = function() {
         if (running) {
@@ -35,16 +76,44 @@ $(document).ready(function() {
         //console.log("update: time since last delta is " + (timeNow - timeLast)  + "ms, time since start is " + (timeNow - timeStart) + "ms");
 
         if (ticker <= 0) {
-            if (particles.length < MAX_PARTICLES)
-                particles.push(new createParticle());
+            if (particles.length < MAX_PARTICLES)   {
+                if (random)
+                    particles.push(new createParticle());
+            }
 
             ticker = EMITTER_FREQUENCY;
+            ticks++;
         } else {
             ticker -= deltaLast;
         }
 
-        if (deltaEver > 20000)
+        if (!random) {
+            //read from file for events
+        }
+
+        //stop after X ms
+        if (deltaEver > 60000)
             running = false;
+
+        if (ticks % 100 == 99) {
+            //console.log("100 ticks after " +deltaEver+ "ms");
+            //console.log("particles.length: " +particles.length);
+            ticks++;
+
+            //clean up the particles array
+            var newParticles = new Array();
+            var tot = particles.length;
+            for (var i = 0; i < tot; i++) {
+                thisPart = particles[i];
+                if (thisPart.alive)
+                    newParticles.push(thisPart);
+            }
+            particles = newParticles;
+            //console.log("newParticles.length: " +newParticles.length);
+
+            //read more events into buffer if necessary
+
+        }
     }
 
     var draw = function() {
