@@ -143,8 +143,8 @@ $(document).ready(function () {
         }
 
         //stop after X ms
-        if (deltaEver > 600000)
-            running = false;
+        //if (deltaEver > 600000)
+        //    running = false;
 
         if (ticks % 100 == 99) {
             //console.log("100 ticks after " +deltaEver+ "ms");
@@ -191,6 +191,9 @@ $(document).ready(function () {
     }
 
     var updateParticle = function (particle) {
+        if (deltaEver > particle.diesafter)
+            particle.alive = false;
+
         attractTowardsEmitter(particle);
         particle.x += particle.vx;
         particle.y += particle.vy;
@@ -247,15 +250,21 @@ $(document).ready(function () {
         this.vx = (Math.random() * 2 - 1) * speedlimiter;
         this.vy = (Math.random() * 2 - 1) * speedlimiter;
 
-        //var r = Math.random() * 255 >> 0;
-        //var g = Math.random() * 255 >> 0;
-        //var b = Math.random() * 255 >> 0;
-        //this.color = "rgba(" + r + ", " + g + ", " + b + ", 0.8)";
         this.color = "rgba(90,90,90,0.8)";
+        this.alive = true;
+        this.diesafter = deltaEver + 180000;
+        this.radius = 2;
+        this.user = event.user;
 
         switch (event.type) {
             case "session_start":
+            case "session_end":
                 this.color = "rgba(0,255,102,0.8)";
+                break;
+            case "buy_in":
+                this.color = "rgba(255,0,0,1.0)";
+                this.radius = 3;
+                this.diesafter = deltaEver + 600000;
                 break;
             case "purchase":
                 this.color = "rgba(0,153,255,0.8)";
@@ -268,46 +277,47 @@ $(document).ready(function () {
                 break;
             case "event":
                 this.color = "rgba(153,153,153,0.8)";
+                this.vx = this.vx / 2;
+                this.vy = this.vy / 2;
+                this.radius = 1;
+                this.diesafter = deltaEver + 30000;
                 break;
             default:
-                console.log("event.type " + event.type);
-                this.color = "rgba(" + (Math.random() * 255 >> 0) + ", " + (Math.random() * 255 >> 0) + ", " + (Math.random() * 255 >> 0) + ", 0.8)";
+                console.log("unmatched event.type " + event.type);
         }
-
-        this.alive = true;
-        this.radius = 2;
-        this.user = event.user;
 
         this.x += this.vx;
         this.y += this.vy;
 
         //console.log("created particle for user " + this.user, event); //
-
         if (debug)
             console.log("created particle at [" + this.x + "," + this.y + "] with velocity [" + this.vx + "," + this.vy + "]");
     }
 
     var createParticleRandom = function () {
-        var speedlimiter = 100.0 / FRAMESPEED;
-        this.x = EMITTER_X + (Math.random() * 8 - 4) * speedlimiter;
-        this.y = EMITTER_Y + (Math.random() * 8 - 4) * speedlimiter;
-        this.vx = (Math.random() * 2 - 1) * speedlimiter;
-        this.vy = (Math.random() * 2 - 1) * speedlimiter;
 
-        var r = Math.random() * 255 >> 0;
-        var g = Math.random() * 255 >> 0;
-        var b = Math.random() * 255 >> 0;
-        this.color = "rgba(" + r + ", " + g + ", " + b + ", 0.8)";
-        this.alive = true;
-        this.radius = 2;
-        this.user = "user" + particleNumber;
+        var whichEvent = Math.random() * 10 >> 0;
+        var event = { user: "user" + particleNumber};
         particleNumber++;
 
-        this.x += this.vx;
-        this.y += this.vy;
+        switch (whichEvent) {
+            case 0:
+                event.type = "session_start";
+                break;
+            case 1:
+                event.type = "user";
+                break;
+            case 2:
+                event.type = "purchase";
+                break;
+            case 3:
+                event.type = "buy_in"
+                break;
+            default:
+                event.type = "event";
+        }
 
-        if (debug)
-            console.log("created particle at [" + this.x + "," + this.y + "] with velocity [" + this.vx + "," + this.vy + "]");
+        return new createParticle(event);
     }
 
     var animFrame = window.requestAnimationFrame ||
