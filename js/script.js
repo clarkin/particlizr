@@ -14,7 +14,7 @@ $(document).ready(function () {
     var random = false;
     var ticks = 0;
     var eventQueue = new Array();
-    var reader = new FileReader();
+    var reader;
     var file;
     var fileStart = 0;
     var fileEnd = 0;
@@ -52,6 +52,11 @@ $(document).ready(function () {
     }
     $("#file-selector").on("change", setFile);
     startRandom();
+
+    //FileReader not always available (eg in safari), hide upload button if so
+    if (!window.FileReader) {
+        $("#filereader-holder").hide();
+    }
 
     readFromFile = function () {
         reader = new FileReader();
