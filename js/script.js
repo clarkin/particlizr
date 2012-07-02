@@ -280,7 +280,7 @@ $(document).ready(function () {
                 this.vx = this.vx / 2;
                 this.vy = this.vy / 2;
                 this.radius = 1;
-                this.diesafter = deltaEver + 30000;
+                this.diesafter = deltaEver + 10000;
                 break;
             default:
                 console.log("unmatched event.type " + event.type);
