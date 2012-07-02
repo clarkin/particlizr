@@ -1,5 +1,5 @@
 
-$(document).ready(function() {
+$(document).ready(function () {
 
     var cv = $('#main-canvas');
     var timeStart = new Date();
@@ -8,11 +8,18 @@ $(document).ready(function() {
     var deltaLast = 0;
     var deltaEver = 0;
     var particles = new Array();
+    var particleNumber = 0;
     var running = false;
     var debug = false;
     var random = false;
     var ticks = 0;
+    var eventQueue = new Array();
     var reader = new FileReader();
+    var file;
+    var fileStart = 0;
+    var fileEnd = 0;
+    var fileBytesPerLoad = 5000;
+    var fileTimeStart = 0;
 
     var FRAMESPEED = 20.0;
     var EMITTER_X = 470.0;
@@ -22,52 +29,73 @@ $(document).ready(function() {
     var MAX_PARTICLES = 10000;
     var ticker = EMITTER_FREQUENCY;
 
-    var start = function() {
+    var start = function () {
         timeStart = new Date();
         particles = new Array();
         running = true;
     }
 
-    var startRandom = function() {
+    var startRandom = function () {
         random = true;
         start();
     }
     $("#start-random").on("click", startRandom);
 
-    var loadFromFile = function(evt) {
-        var file = evt.target.files[0];
+    var setFile = function (evt) {
+        file = evt.target.files[0];
         console.log("looking at " + file.name + " of size " + file.size + " bytes.");
 
-        reader = new FileReader();
-        reader.onloadend = checkLoadEnd;
-        var jsonblob = file.webkitSlice(0,50000);
-        reader.readAsBinaryString(jsonblob);
+        readFromFile();
 
         random = false;
         start();
     }
-    $("#file-selector").on("change", loadFromFile);
+    $("#file-selector").on("change", setFile);
+    startRandom();
 
-    var checkLoadEnd = function(evt) {
+    readFromFile = function () {
+        reader = new FileReader();
+        reader.onloadend = checkLoadEnd;
+        fileStart = fileEnd;
+        fileEnd = fileStart + fileBytesPerLoad;
+        var jsonblob = file.webkitSlice(fileStart, fileEnd);
+        reader.readAsBinaryString(jsonblob);
+    }
+
+    var checkLoadEnd = function (evt) {
         //console.log("checking load end", evt.target.readyState)
         if (evt.target.readyState == FileReader.DONE)
-            loadedStartOfFile(evt.target.result);
+            loadedFromFile(evt.target.result);
     }
 
-    var loadedStartOfFile = function(loadedString) {
-        console.log("loaded:",loadedString);
+    var loadedFromFile = function (loadedString) {
+        stringEvents = loadedString.split("\n");
+        //console.log("loaded:", loadedString);
+
         //loop through finding events
+        for (var i = 0; i < stringEvents.length; i++) {
+            try {
+                thisEvent = jQuery.parseJSON(stringEvents[i]);
+                if (thisEvent !== null)
+                    eventQueue.push(thisEvent);
+            } catch (e) {
+                //console.log("error:", e)
+            }
+        }
 
+        if (fileTimeStart == 0)
+            fileTimeStart = eventQueue[0].time;
+        //console.log("eventQueue", eventQueue);
     }
 
-    var mainloop = function() {
+    var mainloop = function () {
         if (running) {
             update();
             draw();
         }
     };
 
-    var update = function() {
+    var update = function () {
 
         timeLast = timeNow;
         timeNow = new Date();
@@ -76,9 +104,9 @@ $(document).ready(function() {
         //console.log("update: time since last delta is " + (timeNow - timeLast)  + "ms, time since start is " + (timeNow - timeStart) + "ms");
 
         if (ticker <= 0) {
-            if (particles.length < MAX_PARTICLES)   {
+            if (particles.length < MAX_PARTICLES) {
                 if (random)
-                    particles.push(new createParticle());
+                    particles.push(new createParticleRandom());
             }
 
             ticker = EMITTER_FREQUENCY;
@@ -88,11 +116,34 @@ $(document).ready(function() {
         }
 
         if (!random) {
-            //read from file for events
+            //check for overdue events from queue
+            if (eventQueue.length > 0) {
+                var checking = true;
+                while (checking && eventQueue.length > 0) {
+                    var nextEventTime = eventQueue[0].time;
+                    //console.log("delta event time = " + (nextEventTime - fileTimeStart) + ", deltaEver = " + deltaEver);
+                    if (nextEventTime - fileTimeStart <= deltaEver) {
+                        thisEvent = eventQueue.shift();
+                        //console.log("adding event of type " + thisEvent.type, thisEvent);
+                        particles.push(new createParticle(thisEvent));
+                        /*
+                        if (thisEvent.type == "session_start")
+                            particles.push(new createParticle(thisEvent));
+                        else
+                            eventForParticle(thisEvent);
+                        */
+                    }
+                    else
+                        checking = false;
+                }
+            } else {
+                //read more events from file
+                readFromFile();
+            }
         }
 
         //stop after X ms
-        if (deltaEver > 60000)
+        if (deltaEver > 600000)
             running = false;
 
         if (ticks % 100 == 99) {
@@ -109,14 +160,12 @@ $(document).ready(function() {
                     newParticles.push(thisPart);
             }
             particles = newParticles;
-            //console.log("newParticles.length: " +newParticles.length);
-
-            //read more events into buffer if necessary
+            //console.log("newParticles.length: " + newParticles.length + ", eventQueue.length: " + eventQueue.length);
 
         }
     }
 
-    var draw = function() {
+    var draw = function () {
 
         cv.clearCanvas();
 
@@ -141,21 +190,21 @@ $(document).ready(function() {
 
     }
 
-    var updateParticle = function(particle) {
+    var updateParticle = function (particle) {
         attractTowardsEmitter(particle);
         particle.x += particle.vx;
         particle.y += particle.vy;
     }
 
-    var drawParticle = function(particle) {
+    var drawParticle = function (particle) {
         cv.drawArc({
-            fillStyle: "#CCC",
+            fillStyle: particle.color,
             x: particle.x, y: particle.y,
             radius: particle.radius
         });
     }
 
-    var attractTowardsEmitter = function(particle) {
+    var attractTowardsEmitter = function (particle) {
         var xdist = EMITTER_X - particle.x;
         var ydist = EMITTER_Y - particle.y;
         var distanceSq = (xdist * xdist) + (ydist * ydist);
@@ -170,56 +219,115 @@ $(document).ready(function() {
             particle.alive = false;
 
         if (debug) {
-            console.log("now particle at ["+particle.x.toFixed(2)+","+particle.y.toFixed(2)+"] with velocity ["+particle.vx.toFixed(2)+","+particle.vy.toFixed(2)+"]");
-            console.log("xdist: " +xdist+ ", ydist: " +ydist);
-            console.log("distanceSq: " +distanceSq);
-            console.log("attraction: " +attraction);
-            console.log("direction: " +direction);
-            console.log("attractionX: " +attractionX+ ", attractionY: " +attractionY);
+            console.log("now particle at [" + particle.x.toFixed(2) + "," + particle.y.toFixed(2) + "] with velocity [" + particle.vx.toFixed(2) + "," + particle.vy.toFixed(2) + "]");
+            console.log("xdist: " + xdist + ", ydist: " + ydist);
+            console.log("distanceSq: " + distanceSq);
+            console.log("attraction: " + attraction);
+            console.log("direction: " + direction);
+            console.log("attractionX: " + attractionX + ", attractionY: " + attractionY);
         }
     }
 
-    var createParticle = function() {
+    var eventForParticle = function (event) {
+        //console.log("eventForParticle", event);
+        var totalParticles = particles.length;
+        for (var i = 0; i < totalParticles; i++) {
+            if (event.user == particles[i].user) {
+                console.log("found particle for user " + event.user + " at " + i);
+                break;
+            }
+        }
+
+    }
+
+    var createParticle = function (event) {
         var speedlimiter = 100.0 / FRAMESPEED;
-        this.x = EMITTER_X + (Math.random()*8-4)*speedlimiter;
-        this.y = EMITTER_Y + (Math.random()*8-4)*speedlimiter;
-        this.vx = (Math.random()*2-1)*speedlimiter;
-        this.vy = (Math.random()*2-1)*speedlimiter;
+        this.x = EMITTER_X + (Math.random() * 8 - 4) * speedlimiter;
+        this.y = EMITTER_Y + (Math.random() * 8 - 4) * speedlimiter;
+        this.vx = (Math.random() * 2 - 1) * speedlimiter;
+        this.vy = (Math.random() * 2 - 1) * speedlimiter;
 
-        //this.vx = 5.0;
-        //this.vy = 2.0;
+        //var r = Math.random() * 255 >> 0;
+        //var g = Math.random() * 255 >> 0;
+        //var b = Math.random() * 255 >> 0;
+        //this.color = "rgba(" + r + ", " + g + ", " + b + ", 0.8)";
+        this.color = "rgba(90,90,90,0.8)";
 
-        //var r = Math.random()*255>>0;
-        //var g = Math.random()*255>>0;
-        //var b = Math.random()*255>>0;
-        //this.color = "rgba("+r+", "+g+", "+b+", 0.5)";
+        switch (event.type) {
+            case "session_start":
+                this.color = "rgba(0,255,102,0.8)";
+                break;
+            case "purchase":
+                this.color = "rgba(0,153,255,0.8)";
+                break;
+            case "user":
+                this.color = "rgba(255,204,0,0.8)";
+                break;
+            case "currency_given":
+                this.color = "rgba(255,102,204,0.8)";
+                break;
+            case "event":
+                this.color = "rgba(153,153,153,0.8)";
+                break;
+            default:
+                console.log("event.type " + event.type);
+                this.color = "rgba(" + (Math.random() * 255 >> 0) + ", " + (Math.random() * 255 >> 0) + ", " + (Math.random() * 255 >> 0) + ", 0.8)";
+        }
+
         this.alive = true;
         this.radius = 2;
+        this.user = event.user;
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        //console.log("created particle for user " + this.user, event); //
+
+        if (debug)
+            console.log("created particle at [" + this.x + "," + this.y + "] with velocity [" + this.vx + "," + this.vy + "]");
+    }
+
+    var createParticleRandom = function () {
+        var speedlimiter = 100.0 / FRAMESPEED;
+        this.x = EMITTER_X + (Math.random() * 8 - 4) * speedlimiter;
+        this.y = EMITTER_Y + (Math.random() * 8 - 4) * speedlimiter;
+        this.vx = (Math.random() * 2 - 1) * speedlimiter;
+        this.vy = (Math.random() * 2 - 1) * speedlimiter;
+
+        var r = Math.random() * 255 >> 0;
+        var g = Math.random() * 255 >> 0;
+        var b = Math.random() * 255 >> 0;
+        this.color = "rgba(" + r + ", " + g + ", " + b + ", 0.8)";
+        this.alive = true;
+        this.radius = 2;
+        this.user = "user" + particleNumber;
+        particleNumber++;
+
         this.x += this.vx;
         this.y += this.vy;
 
         if (debug)
-            console.log("created particle at ["+this.x+","+this.y+"] with velocity ["+this.vx+","+this.vy+"]");
+            console.log("created particle at [" + this.x + "," + this.y + "] with velocity [" + this.vx + "," + this.vy + "]");
     }
 
     var animFrame = window.requestAnimationFrame ||
             window.webkitRequestAnimationFrame ||
-            window.mozRequestAnimationFrame    ||
-            window.oRequestAnimationFrame      ||
-            window.msRequestAnimationFrame     ||
-            null ;
+            window.mozRequestAnimationFrame ||
+            window.oRequestAnimationFrame ||
+            window.msRequestAnimationFrame ||
+            null;
 
-    if ( animFrame !== null ) {
-        var recursiveAnim = function() {
+    if (animFrame !== null) {
+        var recursiveAnim = function () {
             mainloop();
-            animFrame( recursiveAnim, cv );
+            animFrame(recursiveAnim, cv);
         };
 
         // start the mainloop
-        animFrame( recursiveAnim, cv );
+        animFrame(recursiveAnim, cv);
     } else {
-        var ONE_FRAME_TIME = 1000.0 / 60.0 ;
-        setInterval( mainloop, ONE_FRAME_TIME );
+        var ONE_FRAME_TIME = 1000.0 / 60.0;
+        setInterval(mainloop, ONE_FRAME_TIME);
     }
 
 });
